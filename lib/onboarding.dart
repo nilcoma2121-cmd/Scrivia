@@ -1,3 +1,4 @@
+import 'package:scrivia/main.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -326,12 +327,18 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
             ],
           ),
         ),
-        const SizedBox(height: 30),
+       const SizedBox(height: 30),
         SizedBox(
           width: double.infinity,
           child: ElevatedButton(
             onPressed: _loading ? null : () async {
               await _finish();
+              if (mounted) {
+                Navigator.of(context).pushAndRemoveUntil(
+                  MaterialPageRoute(builder: (_) => const MainScreen()),
+                  (route) => false,
+                );
+              }
             },
             style: ElevatedButton.styleFrom(
               backgroundColor: C.accent,
