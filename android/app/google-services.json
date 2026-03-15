@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "76929705254",
+    "project_id": "scrivia-47b4a",
+    "storage_bucket": "scrivia-47b4a.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:76929705254:android:728cfa4a9201b863750de7",
+        "android_client_info": {
+          "package_name": "com.scrivia.scrivia"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyC63mWrLuqs-awy0gIpGmOmPqKiJVO2jJQ"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
