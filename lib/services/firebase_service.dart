@@ -223,4 +223,127 @@ class FirebaseService {
       });
     } catch (_) {}
   }
+
+  // ─── PROGRESSION DES LEÇONS ──────────────────────────────
+  static Future<Map<String, dynamic>> getLessonProgress(String lessonId) async {
+    if (uid == null) return {'consecutiveSuccesses': 0, 'totalAttempts': 0};
+    try {
+      final doc =
+          await _userDoc.collection('lessonProgress').doc(lessonId).get();
+      if (!doc.exists) return {'consecutiveSuccesses': 0, 'totalAttempts': 0};
+      return doc.data() as Map<String, dynamic>;
+    } catch (_) {
+      return {'consecutiveSuccesses': 0, 'totalAttempts': 0};
+    }
+  }
+
+  static Future<void> saveLessonResult({
+    required String lessonId,
+    required bool success,
+    required int durationSeconds,
+    required String lessonTitre,
+    required String lessonEmoji,
+  }) async {
+    if (uid == null) return;
+    try {
+      final ref = _userDoc.collection('lessonProgress').doc(lessonId);
+      final doc = await ref.get();
+      final data =
+          doc.exists ? doc.data() as Map<String, dynamic> : <String, dynamic>{};
+      final prev = (data['consecutiveSuccesses'] ?? 0) as int;
+      final consec = success ? prev + 1 : 0;
+      final durations = List<int>.from(data['durations'] ?? []);
+      durations.add(durationSeconds);
+      if (durations.length > 10) durations.removeAt(0);
+
+      await ref.set({
+        'lessonId': lessonId,
+        'lessonTitre': lessonTitre,
+        'lessonEmoji': lessonEmoji,
+        'consecutiveSuccesses': consec,
+        'totalAttempts': FieldValue.increment(1),
+        'isAcquise': consec >= 3,
+        'durations': durations,
+        'lastAttempt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+    } catch (_) {}
+  }
+
+  static Future<List<Map<String, dynamic>>> getAcquisLecons() async {
+    if (uid == null) return [];
+    try {
+      final snap = await _userDoc
+          .collection('lessonProgress')
+          .where('isAcquise', isEqualTo: true)
+          .orderBy('lastAttempt', descending: true)
+          .get();
+      return snap.docs.map((d) => {'id': d.id, ...d.data()}).toList();
+    } catch (_) {
+      return [];
+    }
+  }
+
+  static Future<int> getTempsMoyenLecon() async {
+    if (uid == null) return 600;
+    try {
+      final snap = await _userDoc
+          .collection('lessonProgress')
+          .orderBy('lastAttempt', descending: true)
+          .limit(10)
+          .get();
+      final allDurations = <int>[];
+      for (final doc in snap.docs) {
+        final durations = List<int>.from(doc.data()['durations'] ?? []);
+        allDurations.addAll(durations);
+      }
+      if (allDurations.isEmpty) return 600;
+      return (allDurations.reduce((a, b) => a + b) / allDurations.length)
+          .round();
+    } catch (_) {
+      return 600;
+    }
+  }
+
+  // ─── LEÇONS SAUVEGARDÉES ─────────────────────────────────
+  static Future<void> saveLecon(
+      String lessonId, Map<String, dynamic> data) async {
+    if (uid == null) return;
+    try {
+      await _userDoc.collection('savedLecons').doc(lessonId).set({
+        ...data,
+        'savedAt': FieldValue.serverTimestamp(),
+      });
+    } catch (_) {}
+  }
+
+  static Future<void> unsaveLecon(String lessonId) async {
+    if (uid == null) return;
+    try {
+      await _userDoc.collection('savedLecons').doc(lessonId).delete();
+    } catch (_) {}
+  }
+
+  static Future<bool> isLeconSaved(String lessonId) async {
+    if (uid == null) return false;
+    try {
+      final doc =
+          await _userDoc.collection('savedLecons').doc(lessonId).get();
+      return doc.exists;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  static Future<List<Map<String, dynamic>>> getSavedLecons() async {
+    if (uid == null) return [];
+    try {
+      final snap = await _userDoc
+          .collection('savedLecons')
+          .orderBy('savedAt', descending: true)
+          .get();
+      return snap.docs.map((d) => {'id': d.id, ...d.data()}).toList();
+    } catch (_) {
+      return [];
+    }
+  }
 }

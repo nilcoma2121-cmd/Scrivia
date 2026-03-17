@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
+import 'bescherelle_rules.dart';
 
 class GeminiService {
   static const _apiKey = 'AIzaSyBA_L3OoAJ_MgVwOxCiXedhjuVu90rVw9I';
@@ -7,15 +8,19 @@ class GeminiService {
       'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=$_apiKey';
 
   // ─── GÉNÈRE 5 QUESTIONS DE JEU ───────────────────────────
-  // fautes : liste de mots que l'utilisateur a mal écrits
   Future<List<GameQuestion>> generateQuestions(List<String> fautes) async {
     final contexte = fautes.isEmpty
         ? 'orthographe française générale'
         : 'les fautes suivantes : ${fautes.join(', ')}';
 
+    final bescherelleContext = BescherelleRules.getRulesContext(fautes);
+    final rulesSection = bescherelleContext.isNotEmpty
+        ? '\n$bescherelleContext\n'
+        : '';
+
     final prompt = '''
 Tu es un professeur de français. Génère 5 questions de jeu d'orthographe basées sur $contexte.
-
+$rulesSection
 Réponds UNIQUEMENT avec un JSON valide, sans texte avant ou après, sans balises markdown.
 Format exact :
 [
@@ -59,7 +64,8 @@ Règles :
         final data = jsonDecode(response.body);
         final text =
             data['candidates'][0]['content']['parts'][0]['text'] as String;
-        final clean = text.replaceAll('```json', '').replaceAll('```', '').trim();
+        final clean =
+            text.replaceAll('```json', '').replaceAll('```', '').trim();
         final List<dynamic> json = jsonDecode(clean);
         return json.map((e) => GameQuestion.fromJson(e)).toList();
       }
@@ -69,33 +75,63 @@ Règles :
     return _fallbackQuestions();
   }
 
-  // ─── GÉNÈRE UNE LEÇON PERSONNALISÉE ──────────────────────
-  Future<Lecon> generateLecon(List<String> fautes) async {
-    final contexte = fautes.isEmpty
-        ? 'orthographe française générale'
-        : 'ces fautes récentes : ${fautes.join(', ')}';
+  // ─── GÉNÈRE UNE LEÇON COMPLÈTE AVEC EXERCICES ────────────
+  // fautes : mots mal écrits par l'utilisateur
+  // topic  : sujet libre (catalogue), prioritaire si fourni
+  Future<Lecon> generateLecon(List<String> fautes, {String? topic}) async {
+    final contexte = topic != null
+        ? 'le sujet suivant : "$topic"'
+        : fautes.isEmpty
+            ? 'orthographe française générale'
+            : 'ces fautes récentes : ${fautes.join(', ')}';
+
+    final bescherelleContext = BescherelleRules.getRulesContext(fautes);
+    final rulesSection = bescherelleContext.isNotEmpty
+        ? '\n$bescherelleContext\n'
+        : '';
 
     final prompt = '''
-Tu es un professeur de français bienveillant. Génère une leçon courte basée sur $contexte.
+Tu es un professeur de français bienveillant. Génère une leçon complète avec exercices basée sur $contexte.
+$rulesSection
 
 Réponds UNIQUEMENT avec un JSON valide, sans texte avant ou après, sans balises markdown.
 Format exact :
 {
-  "titre": "Titre de la leçon",
+  "titre": "Titre court de la leçon",
   "emoji": "📝",
-  "duree": "5 min",
-  "resume": "Une phrase de résumé de la leçon.",
+  "duree": "10 min",
+  "resume": "Une phrase de résumé.",
   "regles": [
     {
       "titre": "Règle 1",
-      "explication": "Explication courte et claire.",
-      "exemple": "Exemple concret."
+      "explication": "Explication claire et simple.",
+      "exemple": "✅ Exemple correct.\\n❌ Exemple incorrect."
     }
   ],
-  "conseil": "Un conseil motivant pour l'utilisateur."
+  "conseil": "Un conseil motivant pour l'utilisateur.",
+  "exercices": [
+    {
+      "type": "choix_multiple",
+      "consigne": "Quelle est la bonne orthographe ?",
+      "enonce": "Texte ou question de l'exercice.",
+      "choix": ["option1", "option2", "option3", "option4"],
+      "bonneReponse": "option1",
+      "explication": "Explication de la bonne réponse."
+    }
+  ]
 }
 
-Maximum 3 règles. Langage simple, encourageant.
+Règles pour les exercices :
+- Génère exactement 6 exercices
+- Types obligatoires dans cet ordre : choix_multiple, completer, correction, homophone, accord, dictee
+- 4 choix par exercice
+- bonneReponse doit être exactement l'une des valeurs dans choix (copie exacte)
+- Niveau collège, langage simple et encourageant
+
+Règles pour la leçon :
+- Maximum 3 règles
+- Langage simple, bienveillant
+- exemple : ✅ une phrase correcte, puis \\n, puis ❌ une phrase incorrecte
 ''';
 
     try {
@@ -112,7 +148,7 @@ Maximum 3 règles. Langage simple, encourageant.
           ],
           'generationConfig': {
             'temperature': 0.5,
-            'maxOutputTokens': 1000,
+            'maxOutputTokens': 2500,
           }
         }),
       );
@@ -121,7 +157,8 @@ Maximum 3 règles. Langage simple, encourageant.
         final data = jsonDecode(response.body);
         final text =
             data['candidates'][0]['content']['parts'][0]['text'] as String;
-        final clean = text.replaceAll('```json', '').replaceAll('```', '').trim();
+        final clean =
+            text.replaceAll('```json', '').replaceAll('```', '').trim();
         final Map<String, dynamic> json = jsonDecode(clean);
         return Lecon.fromJson(json);
       }
@@ -145,14 +182,18 @@ Maximum 3 règles. Langage simple, encourageant.
           trous: ['___'],
           reponses: ['posé', 'poser', 'posée', 'posés'],
           bonnesReponses: ['posé'],
-          explications: ['Participe passé avec avoir, pas d\'accord avec le sujet.'],
+          explications: [
+            'Participe passé avec avoir, pas d\'accord avec le sujet.'
+          ],
         ),
         GameQuestion(
           phrase: 'Tu ___ vraiment bien travaillé.',
           trous: ['___'],
           reponses: ['as', 'a', 'es', 'ai'],
           bonnesReponses: ['as'],
-          explications: ["'as travaillé' = passé composé, 2e personne du singulier."],
+          explications: [
+            "'as travaillé' = passé composé, 2e personne du singulier."
+          ],
         ),
         GameQuestion(
           phrase: 'Nous ___ mangé une bonne ___ .',
@@ -179,9 +220,8 @@ Maximum 3 règles. Langage simple, encourageant.
   Lecon _fallbackLecon() => Lecon(
         titre: 'L\'accord du participe passé',
         emoji: '📝',
-        duree: '5 min',
-        resume:
-            'Le participe passé s\'accorde selon l\'auxiliaire utilisé.',
+        duree: '10 min',
+        resume: 'Le participe passé s\'accorde selon l\'auxiliaire utilisé.',
         regles: [
           RegleLecon(
             titre: 'Avec avoir',
@@ -191,13 +231,79 @@ Maximum 3 règles. Langage simple, encourageant.
           ),
           RegleLecon(
             titre: 'Avec être',
-            explication:
-                'Le participe passé s\'accorde avec le sujet.',
+            explication: 'Le participe passé s\'accorde avec le sujet.',
             exemple: 'Elle est partie.',
           ),
         ],
         conseil: 'Continue comme ça, tu progresses vite ! 💪',
+        exercices: _fallbackExercices(),
       );
+
+  List<ExerciceLecon> _fallbackExercices() => [
+        const ExerciceLecon(
+          type: 'choix_multiple',
+          consigne: 'Quelle est la bonne orthographe ?',
+          enonce: 'Comment écrit-on ce mot courant ?',
+          choix: ['aujourd\'hui', 'aujordhui', 'aujoud\'hui', 'ojour\'dhui'],
+          bonneReponse: 'aujourd\'hui',
+          explication:
+              '"Aujourd\'hui" vient de "au jour de hui". Il faut l\'apostrophe entre "d" et "hui".',
+        ),
+        const ExerciceLecon(
+          type: 'completer',
+          consigne: 'Complète la phrase avec le bon mot.',
+          enonce: 'Elle ___ allée au cinéma hier soir.',
+          choix: ['est', 'et', 'ai', 'ont'],
+          bonneReponse: 'est',
+          explication:
+              '"est" = verbe être conjugué. "et" est une conjonction de coordination.',
+        ),
+        const ExerciceLecon(
+          type: 'correction',
+          consigne: 'Quelle phrase est correctement orthographiée ?',
+          enonce: 'Choisissez la phrase sans faute.',
+          choix: [
+            'Il a beaucoup mangé.',
+            'Il a beaucoups mangé.',
+            'Il as beaucoup mangé.',
+            'Il a beaucoupt mangé.'
+          ],
+          bonneReponse: 'Il a beaucoup mangé.',
+          explication: '"beaucoup" est invariable et s\'écrit sans s final.',
+        ),
+        const ExerciceLecon(
+          type: 'homophone',
+          consigne: 'Quel est le bon homophone ?',
+          enonce: 'Il ___ parti sans prévenir.',
+          choix: ['est', 'et', 'ai', 'es'],
+          bonneReponse: 'est',
+          explication:
+              '"est" (verbe être) ≠ "et" (conjonction). Astuce : remplace par "était" pour vérifier.',
+        ),
+        const ExerciceLecon(
+          type: 'accord',
+          consigne: 'Choisissez la bonne forme accordée.',
+          enonce: 'Les filles ___ contentes de leur résultat.',
+          choix: ['sont', 'est', 'sommes', 'êtes'],
+          bonneReponse: 'sont',
+          explication:
+              'Sujet pluriel "les filles" → verbe au pluriel "sont".',
+        ),
+        const ExerciceLecon(
+          type: 'dictee',
+          consigne: 'Quelle phrase est écrite correctement ?',
+          enonce: 'Identifiez la transcription sans faute.',
+          choix: [
+            'C\'est là-bas.',
+            'C\'est labas.',
+            'C\'est là bas.',
+            'Sé là-bas.'
+          ],
+          bonneReponse: 'C\'est là-bas.',
+          explication:
+              '"là-bas" prend un trait d\'union et un accent grave sur le "à".',
+        ),
+      ];
 }
 
 // ─── MODÈLES ─────────────────────────────────────────────
@@ -225,6 +331,33 @@ class GameQuestion {
       );
 }
 
+class ExerciceLecon {
+  final String type; // choix_multiple | completer | correction | homophone | accord | dictee
+  final String consigne;
+  final String enonce;
+  final List<String> choix;
+  final String bonneReponse;
+  final String explication;
+
+  const ExerciceLecon({
+    required this.type,
+    required this.consigne,
+    required this.enonce,
+    required this.choix,
+    required this.bonneReponse,
+    required this.explication,
+  });
+
+  factory ExerciceLecon.fromJson(Map<String, dynamic> json) => ExerciceLecon(
+        type: json['type'] ?? 'choix_multiple',
+        consigne: json['consigne'] ?? '',
+        enonce: json['enonce'] ?? '',
+        choix: List<String>.from(json['choix'] ?? []),
+        bonneReponse: json['bonneReponse'] ?? '',
+        explication: json['explication'] ?? '',
+      );
+}
+
 class Lecon {
   final String titre;
   final String emoji;
@@ -232,6 +365,8 @@ class Lecon {
   final String resume;
   final List<RegleLecon> regles;
   final String conseil;
+  final List<ExerciceLecon> exercices;
+  final String id;
 
   Lecon({
     required this.titre,
@@ -240,18 +375,33 @@ class Lecon {
     required this.resume,
     required this.regles,
     required this.conseil,
-  });
+    this.exercices = const [],
+    String? id,
+  }) : id = id ?? '${titre.hashCode.abs()}';
 
   factory Lecon.fromJson(Map<String, dynamic> json) => Lecon(
-        titre: json['titre'],
-        emoji: json['emoji'],
-        duree: json['duree'],
-        resume: json['resume'],
-        regles: (json['regles'] as List)
+        titre: json['titre'] ?? '',
+        emoji: json['emoji'] ?? '📝',
+        duree: json['duree'] ?? '10 min',
+        resume: json['resume'] ?? '',
+        regles: (json['regles'] as List? ?? [])
             .map((r) => RegleLecon.fromJson(r))
             .toList(),
-        conseil: json['conseil'],
+        conseil: json['conseil'] ?? '',
+        exercices: (json['exercices'] as List? ?? [])
+            .map((e) => ExerciceLecon.fromJson(e))
+            .toList(),
+        id: json['id']?.toString(),
       );
+
+  Map<String, dynamic> toMap() => {
+        'titre': titre,
+        'emoji': emoji,
+        'duree': duree,
+        'resume': resume,
+        'conseil': conseil,
+        'id': id,
+      };
 }
 
 class RegleLecon {
