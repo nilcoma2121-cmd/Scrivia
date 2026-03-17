@@ -440,6 +440,187 @@ class _LessonsScreenState extends State<LessonsScreen> {
     });
   }
 
+  // Retrouve la catégorie d'un titre dans le catalogue statique.
+  // Retourne 'Personnalisée' si le titre n'y figure pas.
+  String _getCategorieForTitre(String titre) {
+    for (final entry in _catalogue) {
+      if (entry['titre'] == titre) return entry['categorie'] as String;
+    }
+    return 'Personnalisée';
+  }
+
+  void _showSavedLecons() {
+    final pageContext = context;
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: C.bg,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
+      ),
+      builder: (sheetCtx) => DraggableScrollableSheet(
+        initialChildSize: 0.6,
+        maxChildSize: 0.92,
+        minChildSize: 0.35,
+        expand: false,
+        builder: (_, scrollCtrl) => Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Poignée
+            Center(
+              child: Container(
+                margin: const EdgeInsets.only(top: 12, bottom: 8),
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: C.border,
+                  borderRadius: BorderRadius.circular(99),
+                ),
+              ),
+            ),
+            // Titre du sheet
+            Padding(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 18, vertical: 4),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text('🔖 Leçons sauvegardées',
+                      style: GoogleFonts.syne(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w800,
+                          color: C.dark)),
+                  GestureDetector(
+                    onTap: () => Navigator.pop(sheetCtx),
+                    child:
+                        const Icon(Icons.close, color: C.muted, size: 20),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 8),
+            // Contenu
+            Expanded(
+              child: FutureBuilder<List<Map<String, dynamic>>>(
+                future: FirebaseService.getSavedLecons(),
+                builder: (_, snap) {
+                  if (snap.connectionState != ConnectionState.done) {
+                    return const Center(
+                        child: CircularProgressIndicator(color: C.accent));
+                  }
+                  final lecons = snap.data ?? [];
+                  if (lecons.isEmpty) {
+                    return Center(
+                      child: Padding(
+                        padding: const EdgeInsets.all(24),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Text('🔖',
+                                style: TextStyle(fontSize: 40)),
+                            const SizedBox(height: 12),
+                            Text('Aucune leçon sauvegardée',
+                                style: GoogleFonts.syne(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w800,
+                                    color: C.dark)),
+                            const SizedBox(height: 4),
+                            Text(
+                                'Appuie sur "+ Sauvegarder" dans une leçon.',
+                                style: GoogleFonts.nunito(
+                                    fontSize: 12, color: C.muted),
+                                textAlign: TextAlign.center),
+                          ],
+                        ),
+                      ),
+                    );
+                  }
+                  return ListView.builder(
+                    controller: scrollCtrl,
+                    padding: const EdgeInsets.fromLTRB(18, 0, 18, 24),
+                    itemCount: lecons.length,
+                    itemBuilder: (_, i) {
+                      final l = lecons[i];
+                      final titre = l['titre']?.toString() ?? '';
+                      final emoji = l['emoji']?.toString() ?? '📝';
+                      final categorie = _getCategorieForTitre(titre);
+                      return GestureDetector(
+                        onTap: () {
+                          Navigator.pop(sheetCtx);
+                          Navigator.push(
+                            pageContext,
+                            MaterialPageRoute(
+                              builder: (_) =>
+                                  LessonDetailScreen(topic: titre),
+                            ),
+                          );
+                        },
+                        child: Container(
+                          margin: const EdgeInsets.only(bottom: 10),
+                          padding: const EdgeInsets.all(14),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(14),
+                            border: const Border(
+                                left: BorderSide(
+                                    color: C.accent, width: 3)),
+                            boxShadow: [
+                              BoxShadow(
+                                  color:
+                                      C.dark.withValues(alpha: 0.04),
+                                  blurRadius: 8,
+                                  offset: const Offset(0, 2))
+                            ],
+                          ),
+                          child: Row(
+                            children: [
+                              Container(
+                                width: 42,
+                                height: 42,
+                                decoration: BoxDecoration(
+                                    color: C.accentSoft,
+                                    borderRadius:
+                                        BorderRadius.circular(12)),
+                                child: Center(
+                                    child: Text(emoji,
+                                        style: const TextStyle(
+                                            fontSize: 18))),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment:
+                                      CrossAxisAlignment.start,
+                                  children: [
+                                    Text(titre,
+                                        style: GoogleFonts.nunito(
+                                            fontSize: 13,
+                                            fontWeight: FontWeight.w700,
+                                            color: C.dark)),
+                                    const SizedBox(height: 4),
+                                    SBadge(
+                                        text: categorie,
+                                        color: C.accent),
+                                  ],
+                                ),
+                              ),
+                              const Icon(Icons.chevron_right,
+                                  color: C.muted, size: 18),
+                            ],
+                          ),
+                        ),
+                      );
+                    },
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   List<Map<String, dynamic>> get _catalogueFiltre {
     if (_searchQuery.isEmpty) return _catalogue;
     return _catalogue
@@ -505,46 +686,72 @@ class _LessonsScreenState extends State<LessonsScreen> {
                       ),
                       const SizedBox(height: 14),
 
-                      // Barre de recherche
-                      Focus(
-                        onFocusChange: (v) =>
-                            setState(() => _searchFocused = v),
-                        child: TextField(
-                          controller: _searchCtrl,
-                          style: GoogleFonts.nunito(
-                              fontSize: 13, color: C.dark),
-                          decoration: InputDecoration(
-                            hintText: 'Rechercher une leçon...',
-                            hintStyle: GoogleFonts.nunito(
-                                fontSize: 13, color: C.muted),
-                            prefixIcon:
-                                const Icon(Icons.search, color: C.muted, size: 18),
-                            suffixIcon: _searchQuery.isNotEmpty
-                                ? GestureDetector(
-                                    onTap: () => _searchCtrl.clear(),
-                                    child: const Icon(Icons.close,
-                                        color: C.muted, size: 16),
-                                  )
-                                : null,
-                            filled: true,
-                            fillColor: Colors.white,
-                            contentPadding: const EdgeInsets.symmetric(
-                                horizontal: 16, vertical: 12),
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(14),
-                              borderSide: BorderSide(color: C.border),
-                            ),
-                            enabledBorder: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(14),
-                              borderSide: BorderSide(color: C.border),
-                            ),
-                            focusedBorder: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(14),
-                              borderSide:
-                                  BorderSide(color: C.accent, width: 1.5),
+                      // Barre de recherche + bouton sauvegardées
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Focus(
+                              onFocusChange: (v) =>
+                                  setState(() => _searchFocused = v),
+                              child: TextField(
+                                controller: _searchCtrl,
+                                style: GoogleFonts.nunito(
+                                    fontSize: 13, color: C.dark),
+                                decoration: InputDecoration(
+                                  hintText: 'Rechercher une leçon...',
+                                  hintStyle: GoogleFonts.nunito(
+                                      fontSize: 13, color: C.muted),
+                                  prefixIcon: const Icon(Icons.search,
+                                      color: C.muted, size: 18),
+                                  suffixIcon: _searchQuery.isNotEmpty
+                                      ? GestureDetector(
+                                          onTap: () => _searchCtrl.clear(),
+                                          child: const Icon(Icons.close,
+                                              color: C.muted, size: 16),
+                                        )
+                                      : null,
+                                  filled: true,
+                                  fillColor: Colors.white,
+                                  contentPadding:
+                                      const EdgeInsets.symmetric(
+                                          horizontal: 16, vertical: 12),
+                                  border: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(14),
+                                    borderSide:
+                                        BorderSide(color: C.border),
+                                  ),
+                                  enabledBorder: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(14),
+                                    borderSide:
+                                        BorderSide(color: C.border),
+                                  ),
+                                  focusedBorder: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(14),
+                                    borderSide: BorderSide(
+                                        color: C.accent, width: 1.5),
+                                  ),
+                                ),
+                              ),
                             ),
                           ),
-                        ),
+                          const SizedBox(width: 8),
+                          GestureDetector(
+                            onTap: _showSavedLecons,
+                            child: Container(
+                              width: 46,
+                              height: 46,
+                              decoration: BoxDecoration(
+                                color: Colors.white,
+                                borderRadius: BorderRadius.circular(14),
+                                border: Border.all(color: C.border),
+                              ),
+                              child: const Center(
+                                child: Text('🔖',
+                                    style: TextStyle(fontSize: 20)),
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
                       const SizedBox(height: 14),
 
